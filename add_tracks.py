@@ -1,18 +1,37 @@
-# shows artist info for a URN or URL
+#!/usr/bin/env python
 
 import sys
 import pprint
-import json
+import vk_api
 
 import spotipy
 import spotipy.util as util
 
+# Python 2 and 3
+from builtins import input
+
 # provide the user name here
 username = ""
 
-songs = []
-with open('songs.json', 'r') as f:
-    songs = json.load(f)
+VK_EMAIL = ''
+VK_ID = ''
+VK_PASS = ''
+
+def get_sms_code():
+    code = input('input code from sms\n')
+    print('code received: {}'.format(code))
+    return code
+
+vk_session = vk_api.VkApi(VK_EMAIL, VK_PASS, auth_handler=get_sms_code)
+try:
+    vk_session.authorization()
+except vk_api.AuthorizationError as error_msg:
+    print(error_msg)
+    quit()
+vk = vk_session.get_api()
+songs = vk.audio.get(owner_id=VK_ID)['items']
+
+print('You have {} songs'.format(len(songs)))
 
 scope = 'playlist-modify-private'
 token = util.prompt_for_user_token(username, scope)
@@ -28,17 +47,19 @@ sp.trace = False
 
 playlists = sp.user_playlists(username)
 
-print(playlists['items'][0])
-print(playlists['items'][0]['uri'])
-print(playlists['items'][0]['name'])
-print(playlists['items'][0]['id'])
+# TODO search the required playlist instead of taking the first one
+playlist = playlists['items'][0]
 
 for i, song in enumerate(songs):
-    search_str = '{} {}'.format(song['artist'], song['title'])
-    print('Searching {}/{} - {}'.format(i, len(songs), search_str))
-    result = sp.search(search_str)
-    items = result['tracks']['items']
-    if len(items) > 0:
-        print("Found {}, adding to the playlist".format(items[0]['id']))
-        results = sp.user_playlist_add_tracks(username, playlists['items'][0]['uri'], items[0]['id'])
-        print(results)
+    for string_template in [u'{} {}', u'\'{}\' OR \'{}\'', u'{}']:
+        search_str = string_template.format(song['title'], song['artist'])
+        print(u'Searching {}/{} - {}'.format(i, len(songs), search_str))
+        result = sp.search(search_str)
+        items = result['tracks']['items']
+        if len(items) > 0:
+            print(u"Found: \"{}\", adding to {}".format(items[0]['name'], playlist['name']))
+            sp.user_playlist_add_tracks(username, playlist['uri'], [items[0]['id']])
+            break
+        else:
+            print(u"Not found")
+
